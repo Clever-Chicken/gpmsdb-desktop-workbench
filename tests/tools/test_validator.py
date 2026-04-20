@@ -25,3 +25,16 @@ def test_validator_accepts_dictionary_coded_meta(tmp_path: Path) -> None:
     ok, errors = validate_output_dir(out)
     assert ok is True
     assert errors == []
+
+
+def test_validator_rejects_corrupt_header_size(tmp_path: Path) -> None:
+    src = tmp_path / "source"
+    build_fixture(src)
+
+    out = tmp_path / "out"
+    convert_fixture(src, out)
+    (out / "header.bin").write_bytes(b"short")
+
+    ok, errors = validate_output_dir(out)
+    assert ok is False
+    assert "header.bin size mismatch" in errors
