@@ -3,3 +3,5 @@ __pycache__/
 target/
 node_modules/
 .DS_Store
+.serena/
+docs/superpowers/
