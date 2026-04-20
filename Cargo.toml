@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "crates/gpmsdb-format",
+  "crates/gpmsdb-engine",
+  "apps/desktop/src-tauri",
+]
+resolver = "2"

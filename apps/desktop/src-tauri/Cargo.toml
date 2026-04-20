@@ -1,0 +1,8 @@
+[package]
+name = "gpmsdb-desktop-tauri"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "gpmsdb-desktop-tauri"
+path = "src/main.rs"
