@@ -67,7 +67,7 @@ Physical layout:
 
 Encoding and size:
 
-- `peak_value = round(mz * 1000.0)`.
+- For non-negative `mz`, `peak_value = floor(mz * 1000.0 + 0.5)`.
 - `genome_peaks_len = total_peak_count * 4`.
 
 Per-genome slices are defined by `meta.bin::genome_offsets`:
@@ -99,6 +99,7 @@ Derived lengths:
 - Posting fields:
   - `genome_id` in `[0, genome_count)`
   - `local_peak_idx` in owning genome local range
+- Within each bin slice, postings are stored in ascending lexicographic order of `(genome_id, local_peak_idx)`.
 
 Local-to-global mapping:
 
@@ -114,7 +115,7 @@ Physical order is exact and fixed:
 
 1. `genome_offsets[0..genome_count]` as `u64` (`genome_count + 1` entries)
 2. `gene_counts[0..genome_count-1]` as `u32`
-3. `taxonomy_ids[0..genome_count-1]` as `u32`
+3. `taxonomy_ids[0..genome_count-1]` as `u32` (external numeric taxonomy identifier per genome; `0` means unknown/missing)
 4. `name_dict_count` as `u32`
 5. `taxonomy_dict_count` as `u32`
 6. `name_dict_offsets[0..name_dict_count]` as `u64` (`name_dict_count + 1` entries)
@@ -137,6 +138,12 @@ Derived byte sizes:
 - `genome_taxonomy_dict_ids_bytes = genome_count * 4`
 - `meta_len = genome_offsets_bytes + gene_counts_bytes + taxonomy_ids_bytes + 4 + 4 + name_dict_offsets_bytes + taxonomy_dict_offsets_bytes + genome_name_dict_ids_bytes + genome_taxonomy_dict_ids_bytes + 8 + 8 + name_blob_len + taxonomy_blob_len`
 
+`taxonomy_ids` and `genome_taxonomy_dict_ids` are independent fields:
+
+- `taxonomy_ids[g]` is for numeric taxonomy ID use-cases.
+- `genome_taxonomy_dict_ids[g]` is for taxonomy text lookup.
+- They do not need to be one-to-one reversible.
+
 ### 7.2 Dictionary Coding Rules
 
 - Dictionaries are per-file: one for genome names, one for taxonomy strings.
@@ -157,9 +164,9 @@ Offset-table slicing rule:
 For genome row `g`:
 
 1. Read `name_id = genome_name_dict_ids[g]`.
-2. Read `taxonomy_id = genome_taxonomy_dict_ids[g]`.
+2. Read `taxonomy_text_dict_id = genome_taxonomy_dict_ids[g]`.
 3. Slice `name` bytes from `name_blob` via `name_dict_offsets[name_id .. name_id+1]`.
-4. Slice `taxonomy` bytes from `taxonomy_blob` via `taxonomy_dict_offsets[taxonomy_id .. taxonomy_id+1]`.
+4. Slice `taxonomy` bytes from `taxonomy_blob` via `taxonomy_dict_offsets[taxonomy_text_dict_id .. taxonomy_text_dict_id+1]`.
 5. Validate both slices as UTF-8 and materialize strings only if needed by caller.
 
 This preserves mmap-friendly access: fixed-width arrays for row lookup, deduplicated blobs for high cache locality and low memory pressure.
@@ -179,18 +186,24 @@ Readers must reject dataset if any check fails:
 9. `bin_count > 0`.
 10. `bin_offsets[0] = 0` and `bin_offsets` monotonic non-decreasing.
 11. `bin_offsets[bin_count] * 8 = postings_bytes`.
-12. `genome_offsets[0] = 0`.
-13. `genome_offsets[genome_count] = total_peak_count`.
-14. `genome_peaks_len = total_peak_count * 4`.
-15. Every posting has `genome_id < genome_count`.
-16. Every posting has `local_peak_idx < (genome_offsets[genome_id+1] - genome_offsets[genome_id])`.
-17. Every derived `global_peak_idx` is within `[0, total_peak_count)`.
-18. `name_dict_count >= 1`, `taxonomy_dict_count >= 1`, and entry `0` in both dictionaries is exactly empty string (`offsets[0] = 0` and `offsets[1] = 0`).
-19. `name_dict_offsets[0] = 0`, `taxonomy_dict_offsets[0] = 0`; both offset arrays are monotonic non-decreasing.
-20. `name_dict_offsets[name_dict_count] = name_blob_len` and `taxonomy_dict_offsets[taxonomy_dict_count] = taxonomy_blob_len`.
-21. Every `genome_name_dict_ids[g] < name_dict_count` and every `genome_taxonomy_dict_ids[g] < taxonomy_dict_count`.
-22. Every dictionary slice decoded via offset tables is valid UTF-8 (no invalid byte sequences).
-23. CRC checks (section 4.2) all pass.
+12. Recomputed `mass_index_len = 4 + (bin_count + 1) * 8 + bin_offsets[bin_count] * 8` must equal both header `mass_index_len` and actual `mass_index.bin` file length; parser must consume exactly that many bytes (no trailing bytes).
+13. `genome_offsets[0] = 0`.
+14. For all `g` in `[0, genome_count)`, `genome_offsets[g] <= genome_offsets[g+1]`.
+15. `genome_offsets[genome_count] = total_peak_count`.
+16. `genome_peaks_len = total_peak_count * 4`.
+17. Every posting has `genome_id < genome_count`.
+18. Every posting has `local_peak_idx < (genome_offsets[genome_id+1] - genome_offsets[genome_id])`.
+19. Every derived `global_peak_idx` is within `[0, total_peak_count)`.
+20. For every posting in bin `b`, if `global_peak_idx` maps to `peak_value = peak_values[global_peak_idx]`, then `floor(peak_value / bin_width_milli_mz) = b`.
+21. Across all bins, each `global_peak_idx` in `[0, total_peak_count)` appears in `mass_index` exactly once (no missing and no duplicate postings).
+22. `reserved` bytes in `header.bin[96..256)` are all zero.
+23. `name_dict_count >= 1`, `taxonomy_dict_count >= 1`, and entry `0` in both dictionaries is exactly empty string (`offsets[0] = 0` and `offsets[1] = 0`).
+24. `name_dict_offsets[0] = 0`, `taxonomy_dict_offsets[0] = 0`; both offset arrays are monotonic non-decreasing.
+25. `name_dict_offsets[name_dict_count] = name_blob_len` and `taxonomy_dict_offsets[taxonomy_dict_count] = taxonomy_blob_len`.
+26. Every `genome_name_dict_ids[g] < name_dict_count` and every `genome_taxonomy_dict_ids[g] < taxonomy_dict_count`.
+27. Every dictionary slice decoded via offset tables is valid UTF-8 (no invalid byte sequences).
+28. Recomputed `meta_len = genome_offsets_bytes + gene_counts_bytes + taxonomy_ids_bytes + 4 + 4 + name_dict_offsets_bytes + taxonomy_dict_offsets_bytes + genome_name_dict_ids_bytes + genome_taxonomy_dict_ids_bytes + 8 + 8 + name_blob_len + taxonomy_blob_len` must equal both header `meta_len` and actual `meta.bin` file length; parser must consume exactly that many bytes (no trailing bytes).
+29. CRC checks (section 4.2) all pass.
 
 ## 9. Version Gate
 
