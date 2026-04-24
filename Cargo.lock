@@ -1422,7 +1422,9 @@ name = "gpmsdb-format"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
+ "gpmsdb-builder",
  "memmap2",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 

@@ -10,3 +10,7 @@ path = "src/lib.rs"
 bytemuck = { version = "1.20", features = ["derive", "min_const_generics"] }
 memmap2 = "0.9"
 thiserror = "2"
+
+[dev-dependencies]
+gpmsdb-builder = { path = "../gpmsdb-builder" }
+tempfile = "3.13"
