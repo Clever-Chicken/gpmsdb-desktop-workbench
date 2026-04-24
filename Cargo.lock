@@ -1411,8 +1411,10 @@ name = "gpmsdb-engine"
 version = "0.1.0"
 dependencies = [
  "criterion",
+ "gpmsdb-builder",
  "gpmsdb-format",
  "rayon",
+ "tempfile",
 ]
 
 [[package]]

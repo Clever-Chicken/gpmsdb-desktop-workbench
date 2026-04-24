@@ -1,14 +1,31 @@
+use gpmsdb_builder::{build_database, BuildOptions, ProgressMode};
 use gpmsdb_engine::{
     identify, run_batch_for_test, run_batch_with_progress_for_test, search_coarse_into,
     BatchProgressEvent, CandidateHit, QueryPeak, SearchBuffer,
 };
 use gpmsdb_format::MappedDatabase;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+fn fixture_source_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/small_source")
+}
+
+fn build_runtime_fixture() -> tempfile::TempDir {
+    let out_dir = tempfile::tempdir().expect("create temp output dir");
+    build_database(&BuildOptions {
+        source_root: fixture_source_root(),
+        out_dir: out_dir.path().to_path_buf(),
+        progress: ProgressMode::None,
+        ..BuildOptions::default()
+    })
+    .expect("build fixture runtime database");
+    out_dir
+}
 
 #[test]
 fn coarse_search_returns_expected_top_candidate() {
-    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.tmp/small-db");
-    let db = MappedDatabase::open(&fixture_dir).unwrap();
+    let fixture_dir = build_runtime_fixture();
+    let db = MappedDatabase::open(fixture_dir.path()).unwrap();
     let query = vec![
         QueryPeak {
             milli_mz: 1_000_000,
@@ -47,8 +64,8 @@ fn coarse_search_returns_expected_top_candidate() {
 
 #[test]
 fn rerank_prefers_tighter_mass_matches() {
-    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.tmp/small-db");
-    let db = MappedDatabase::open(&fixture_dir).unwrap();
+    let fixture_dir = build_runtime_fixture();
+    let db = MappedDatabase::open(fixture_dir.path()).unwrap();
     let query = vec![
         QueryPeak {
             milli_mz: 1_000_000,
@@ -72,8 +89,8 @@ fn rerank_prefers_tighter_mass_matches() {
 
 #[test]
 fn batch_executor_reports_progress_in_order() {
-    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.tmp/small-db");
-    let db = MappedDatabase::open(&fixture_dir).unwrap();
+    let fixture_dir = build_runtime_fixture();
+    let db = MappedDatabase::open(fixture_dir.path()).unwrap();
     let queries = vec![
         vec![
             QueryPeak {
@@ -116,8 +133,8 @@ fn batch_executor_reports_progress_in_order() {
 
 #[test]
 fn batch_executor_streams_progress_through_callback() {
-    let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.tmp/small-db");
-    let db = MappedDatabase::open(&fixture_dir).unwrap();
+    let fixture_dir = build_runtime_fixture();
+    let db = MappedDatabase::open(fixture_dir.path()).unwrap();
     let queries = vec![
         vec![
             QueryPeak {

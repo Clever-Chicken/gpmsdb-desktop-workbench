@@ -16,4 +16,6 @@ rayon = "1.10"
 
 [dev-dependencies]
 criterion = "0.5"
+gpmsdb-builder = { path = "../gpmsdb-builder" }
 gpmsdb-format = { path = "../gpmsdb-format" }
+tempfile = "3.13"
