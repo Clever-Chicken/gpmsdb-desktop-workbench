@@ -5,3 +5,15 @@ edition = "2021"
 
 [lib]
 path = "src/lib.rs"
+
+[[bench]]
+name = "search_bench"
+harness = false
+
+[dependencies]
+gpmsdb-format = { path = "../gpmsdb-format" }
+rayon = "1.10"
+
+[dev-dependencies]
+criterion = "0.5"
+gpmsdb-format = { path = "../gpmsdb-format" }

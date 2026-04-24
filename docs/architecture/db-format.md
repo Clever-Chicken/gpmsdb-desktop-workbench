@@ -209,3 +209,38 @@ Readers must reject dataset if any check fails:
 
 - Current format is `schema_version = 1`.
 - Any other `schema_version` must be rejected.
+
+## 10. Rust Native Builder Architecture (Non-Normative, Task 17 Locked)
+
+This binary format stays frozen. The producer pipeline that emits it is now locked to a four-stage Rust-native architecture.
+
+1. `Stage 1: Source Ingest Spike`
+   `crates/gpmsdb-builder` exposes a narrow streaming parser dedicated to the original Protocol 4 pickle shape used by `mass/all.db`: `dict[str, list[float]]`. The goal is to emit `(genome_id, peaks)` pairs without heap-deserializing the full giant dictionary.
+2. `Stage 2: Artifact Materialization`
+   The same Rust builder normalizes genome order, converts peak masses into `u32` milli-m/z values, builds postings and metadata dictionaries, and writes `header.bin`, `mass_index.bin`, `genome_peaks.bin`, and `meta.bin` sequentially.
+3. `Stage 3: Runtime Engine`
+   Runtime crates memory-map the four artifacts, validate invariants, and execute coarse screening plus reranking without depending on pickle.
+4. `Stage 4: Desktop Integration`
+   The Tauri desktop shell orchestrates database opening, batch execution, progress streaming, cancellation, and result presentation on top of the Rust runtime.
+
+### 10.1 Builder Tech Stack
+
+- Builder entrypoint: Rust CLI crate `crates/gpmsdb-builder`
+- Builder/runtime file verification and spot-check strategy: `memmap2`
+- Section checksum generation: `crc32fast`
+- Error surface: `thiserror`
+- Parallel build/runtime steps where useful: `rayon`
+- Python remains fixture-only for synthetic test data generation and legacy cross-checking; production conversion direction is Rust-native
+
+### 10.2 Task 17 Development Checklist
+
+- `Red Phase`
+  Add `crates/gpmsdb-builder` to the workspace and write a failing integration test against `tests/fixtures/small_source/all.db`.
+- `Red Phase`
+  The test target is a narrow streaming API for `mass/all.db` that emits `(genome_id, peaks)` in source order and intentionally fails until the parser core exists.
+- `Green Phase`
+  Implement enough Protocol 4 streaming decode logic to walk the fixture and then the real `mass/all.db` payload without `pickle.load`.
+- `Green Phase`
+  Keep the implementation specialized to `dict[str, list[float]]`; general pickle compatibility is explicitly out of scope for this spike.
+- `Refactor Phase`
+  Isolate opcode handling, error reporting, and CRC-enabled artifact writing so the spike can expand into the full builder without changing the frozen binary format above.

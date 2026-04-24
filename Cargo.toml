@@ -1,7 +1,16 @@
 [workspace]
 members = [
+  "crates/gpmsdb-builder",
   "crates/gpmsdb-format",
   "crates/gpmsdb-engine",
   "apps/desktop/src-tauri",
 ]
 resolver = "2"
+
+[profile.dev.package.gpmsdb-builder]
+opt-level = 3
+codegen-units = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

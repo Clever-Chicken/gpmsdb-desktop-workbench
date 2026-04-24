@@ -1,10 +1,192 @@
-# GPMsDB Desktop Modernization
+# GPMsDB 桌面化改造项目说明
 
-This repository modernizes the original GPMsDB command-line toolkit into a
-cross-platform desktop application.
+本项目将原始的 GPMsDB 命令行工具链改造成了一个基于 `Rust + Tauri + React` 的桌面应用，并补齐了数据库构建、真实查询文件输入、结果展示与数据库导出能力。
 
-## Phases
+这份文档面向老师和项目评阅者，重点说明项目目标、完成情况、技术实现与扩展思路。实际操作步骤请查看 [docs/桌面版使用说明.md](docs/桌面版使用说明.md)。
 
-1. Build a custom mmap-friendly binary database from the original pickle assets.
-2. Implement a Rust runtime for coarse screening and reranked identification.
-3. Integrate the runtime into a Tauri desktop application.
+## 1. 项目目标
+
+本次作业希望完成三件事：
+
+1. 将原始 Pickle 形式的 GPMsDB 数据转换为适合高性能检索的二进制数据库。
+2. 用 Rust 实现低内存占用、可批量运行的鉴定引擎。
+3. 在桌面图形界面中完成参数设置、数据加载、批量鉴定、结果展示和数据库导出。
+
+## 2. 当前完成情况
+
+目前项目已经具备以下能力：
+
+- 使用 Rust 原生 builder 将 `all.db` 等 Pickle 数据构建为 `header.bin / mass_index.bin / genome_peaks.bin / meta.bin` 四段式 mmap 数据库。
+- 通过 `gpmsdb-format` crate 以内存映射方式读取数据库，并提供 postings、峰表和元数据访问接口。
+- 通过 `gpmsdb-engine` crate 执行粗筛与重排序识别。
+- 通过 `apps/desktop` 的 Tauri 桌面端实现：
+  - 选择数据库目录
+  - 选择原始数据库目录，并在 GUI 内自动查找 `all.db` 与相关元数据后构建运行时数据库
+  - 选择真实查询文件（`.mgf` / `.txt`）
+  - 启动批量鉴定
+  - 实时进度显示
+  - 结果表格展示
+  - 将数据库元数据导出为 CSV
+- 前端界面已经汉化。
+
+## 3. 项目结构
+
+核心目录如下：
+
+- `crates/gpmsdb-builder`
+  - 负责将原始 Pickle 数据构建为高性能二进制数据库。
+- `crates/gpmsdb-format`
+  - 负责 mmap 数据库读取。
+- `crates/gpmsdb-engine`
+  - 负责批量查询、粗筛、重排和结果计算。
+- `apps/desktop`
+  - Tauri + React 图形界面。
+- `docs/architecture`
+  - 数据格式与任务架构说明。
+- `docs/桌面版使用说明.md`
+  - 面向使用者的详细操作文档。
+
+## 4. 如何将之改造成图形用户界面（GUI）程序，用户在 GUI 里设置参数、加载数据进行鉴定？
+
+本项目已经完成了这一改造，核心做法是：
+
+### 4.1 前后端拆分
+
+- 前端使用 `React` 构建界面，负责：
+  - 展示按钮、表格、日志和进度文本
+  - 调用系统文件选择器
+  - 接收实时事件并刷新 UI
+- 后端使用 `Tauri + Rust`，负责：
+  - 打开数据库
+  - 解析真实查询文件
+  - 调用鉴定引擎
+  - 返回结果与导出 CSV
+
+### 4.2 GUI 交互链路
+
+用户在 GUI 中的操作流程为：
+
+1. 点击“选择数据库目录”，加载 mmap 数据库。
+2. 如果手里只有原始发布包，可点击“导入原始数据库目录并构建”，选中 `R01-RS95`、`mass/`、`custom/` 等相关目录后再选择输出目录，由 Rust builder 在后台自动查找 `all.db` 和相关元数据，生成 `.bin` 数据库并自动加载。
+3. 点击“选择查询文件”，多选 `.mgf` 或 `.txt` 质谱文件。
+4. 点击“开始批量鉴定”，由 Tauri 命令进入 Rust 后端。
+5. Rust 后端逐个解析查询文件，调用 `identify(...)` 执行鉴定。
+6. 后端通过 `batch-progress` 事件持续向前端推送进度。
+7. 后端通过 `batch-results` 事件把最终结果表推回前端。
+8. 前端在结果表格中展示 `query file / genome id / score / matched peaks`。
+
+### 4.3 为什么这种 GUI 架构合适
+
+- UI 与计算逻辑完全解耦，界面不会直接持有数据库内存。
+- 计算逻辑保留在 Rust 中，性能与安全性更高。
+- Tauri 命令接口天然适合把 CLI 能力逐步迁移为 GUI 按钮。
+- 文件选择器、保存对话框、事件流都可以直接接入本地桌面系统。
+
+## 5. 如何优化程序的内存占用和鉴定速度？
+
+### 5.1 已经做过的优化
+
+当前已经实现的优化包括：
+
+- **数据库 mmap 化**
+  - 使用 `memmap2` 直接映射二进制数据库文件，避免启动时整库反序列化。
+- **窄接口流式 Pickle 解码**
+  - 构建阶段对 `all.db` 采用专用流式解码器，避免全局 `HashMap` 累积导致 OOM。
+- **Builder 顺序写盘**
+  - 峰值流式落到 `genome_peaks.bin`，倒排信息分片落盘后收敛。
+- **大缓冲写出**
+  - 使用 `BufWriter::with_capacity(8 * 1024 * 1024, ...)` 降低系统调用频率。
+- **运行时只读结构**
+  - 鉴定阶段直接在 postings 与峰表上读取，避免额外复制。
+- **Tauri 后端异步化**
+  - 重计算逻辑放入后台线程，不阻塞主线程。
+
+### 5.2 还可以继续做的优化
+
+如果继续优化，可以从以下几个方向推进：
+
+#### 内存占用
+
+- 查询阶段把每个查询文件的结果做“边计算边发送”，而不是全部结果累积后再统一发出。
+- 对极大规模结果列表做分页或按 query file 分批回传。
+- 把元数据字典进一步做共享字符串池或压缩字典，减少 `meta.bin` 体积。
+
+#### 鉴定速度
+
+- 对查询峰排序并做更快的 bin 命中聚合，减少 postings 扫描成本。
+- 在 coarse search 阶段增加更细粒度的 cutoff，减少进入 rerank 的候选数。
+- 对多查询场景继续使用 Rayon 并行。
+- 在真实数据规模上做 profile，确定瓶颈是 I/O、postings 扫描还是 rerank 计算，再做针对性优化。
+
+## 6. 能否将数据库数据导出？数据库存储是否可以优化？
+
+### 6.1 能否导出数据库数据
+
+可以，当前桌面端已经支持导出。
+
+用户点击“导出数据库 CSV”后，后端会读取 mmap 数据库中的元数据并写出 CSV，包含：
+
+- `genome_id`
+- `display_name`
+- `taxonomy`
+- `total_peaks`
+- `gene_count`
+
+这说明数据库不仅能用于检索，也能作为可查询、可导出的数据资产。
+
+### 6.2 数据库存储还能如何优化
+
+当前存储已经从原始 Pickle 改造成更适合检索的二进制结构，但仍有可优化空间：
+
+- **峰值编码优化**
+  - 现在使用 `u32` 存储 milli-m/z，已经比 `f64` 更节省空间；未来可考虑 delta 编码或可变长编码。
+- **元数据压缩**
+  - `display_name` 与 `taxonomy` 已经做成字典池，但可以继续配合块压缩降低 `meta.bin` 大小。
+- **倒排索引布局优化**
+  - 可以考虑按访问局部性优化 postings 顺序，减少随机访问。
+- **冷热分层**
+  - 高频访问元数据与低频导出字段拆分为不同段，减少常用场景下的 mmap 体积。
+
+## 7. 运行与复现
+
+最小复现流程：
+
+```bash
+cargo test -p gpmsdb-format
+cargo test -p gpmsdb-desktop-tauri
+corepack pnpm --dir apps/desktop test
+corepack pnpm --dir apps/desktop tauri dev
+```
+
+如果要在终端中从 Pickle 原始数据重新构建数据库，可使用：
+
+```bash
+cargo run -p gpmsdb-builder -- \
+  --source-root tests/fixtures/small_source \
+  --out-dir .tmp/small-db \
+  --progress jsonl
+```
+
+## 8. 当前限制
+
+- 当前查询文件解析器支持作者工具常见的文本峰列表格式：按行读取 `m/z intensity`，也接受只有 `m/z` 一列的行，并兼容 `COM=` 头和 `#` 注释行。
+- 结果表当前展示核心字段，尚未加入更丰富的元数据回填。
+- GUI 中“取消任务”按钮仍是占位，尚未贯通真正的取消信号。
+
+## 9. 总结
+
+本项目已经把原始命令行数据库与检索逻辑，成功演进为一个可运行的桌面 GUI 原型，并完成了：
+
+- 数据库构建
+- 高性能读取
+- 真实文件输入
+- 实时进度反馈
+- 结果表格展示
+- 数据库 CSV 导出
+
+如果继续迭代，下一阶段最值得做的是：
+
+1. 完善真实 `.mgf` 格式解析。
+2. 给 GUI 增加参数面板。
+3. 支持任务取消与结果导出。
+4. 针对真实大规模数据做 profile 与性能调优。

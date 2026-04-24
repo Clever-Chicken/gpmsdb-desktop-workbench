@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 fn main() {
-  // Placeholder binary for Task 1 workspace bootstrap.
+    gpmsdb_desktop_tauri::run();
 }

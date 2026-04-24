@@ -1,0 +1,1 @@
+{"main-capability":{"identifier":"main-capability","description":"Default desktop capability for invoking app commands and opening database directories via the dialog plugin.","local":true,"windows":["main"],"permissions":["core:default","dialog:allow-open","dialog:allow-save"]}}

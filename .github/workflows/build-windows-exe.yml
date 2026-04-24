@@ -1,0 +1,78 @@
+name: build-windows-exe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-windows-exe.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "rust-toolchain.toml"
+      - "README.md"
+      - "docs/**"
+      - "apps/desktop/**"
+      - "crates/**"
+      - "tests/**"
+      - "tools/**"
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Rust tests
+        run: cargo test --workspace
+
+      - name: Run frontend tests
+        run: pnpm --dir apps/desktop test -- --runInBand App.test.tsx
+
+      - name: Build frontend bundle
+        run: pnpm --dir apps/desktop build
+
+      - name: Build Windows executable
+        run: cargo build --release --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+      - name: Collect artifacts
+        run: |
+          New-Item -ItemType Directory -Path artifacts/windows -Force | Out-Null
+          Copy-Item target/release/gpmsdb-desktop-tauri.exe artifacts/windows/
+          if (Test-Path apps/desktop/dist) {
+            Copy-Item apps/desktop/dist artifacts/windows/dist -Recurse
+          }
+
+      - name: Upload Windows executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpmsdb-desktop-windows-exe
+          path: artifacts/windows
+          if-no-files-found: error
