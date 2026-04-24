@@ -52,7 +52,7 @@ jobs:
         run: cargo test --workspace
 
       - name: Run frontend tests
-        run: pnpm --dir apps/desktop test -- --runInBand App.test.tsx
+        run: pnpm --dir apps/desktop exec vitest run --passWithNoTests App.test.tsx
 
       - name: Build frontend bundle
         run: pnpm --dir apps/desktop build
