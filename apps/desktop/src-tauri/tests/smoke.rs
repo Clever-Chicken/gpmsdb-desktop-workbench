@@ -1,3 +1,23 @@
+use std::path::{Path, PathBuf};
+
+use gpmsdb_builder::{build_database, BuildOptions, ProgressMode};
+
+fn fixture_source_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/small_source")
+}
+
+fn build_runtime_fixture() -> tempfile::TempDir {
+    let out_dir = tempfile::tempdir().expect("create temp output dir");
+    build_database(&BuildOptions {
+        source_root: fixture_source_root(),
+        out_dir: out_dir.path().to_path_buf(),
+        progress: ProgressMode::None,
+        ..BuildOptions::default()
+    })
+    .expect("build fixture runtime database");
+    out_dir
+}
+
 #[test]
 fn command_state_starts_without_loaded_database() {
     let state = gpmsdb_desktop_tauri::state::AppState::default();
@@ -6,23 +26,20 @@ fn command_state_starts_without_loaded_database() {
 
 #[test]
 fn desktop_backend_can_open_db_and_schedule_job() {
-    let fixture_dir =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../.tmp/small-db");
-    let query_a =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/query-a.mgf");
-    let query_b =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/query-b.txt");
+    let fixture_dir = build_runtime_fixture();
+    let query_a = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/query-a.mgf");
+    let query_b = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/query-b.txt");
     let state = gpmsdb_desktop_tauri::state::AppState::default();
 
     assert!(state.database_path().is_none());
 
     gpmsdb_desktop_tauri::commands::open_database_for_test(
-        fixture_dir.to_string_lossy().into_owned(),
+        fixture_dir.path().to_string_lossy().into_owned(),
         &state,
     )
     .expect("open_database should accept the small-db fixture");
 
-    assert_eq!(state.database_path(), Some(fixture_dir.clone()));
+    assert_eq!(state.database_path(), Some(fixture_dir.path().to_path_buf()));
 
     let run = gpmsdb_desktop_tauri::commands::run_identification_for_test(
         &state,
@@ -50,8 +67,7 @@ fn desktop_backend_can_open_db_and_schedule_job() {
 
 #[test]
 fn desktop_backend_can_build_runtime_database_from_raw_all_db() {
-    let source_all_db = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../tests/fixtures/small_source/all.db");
+    let source_all_db = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/small_source/all.db");
     let out_dir = tempfile::tempdir().expect("create temp output dir");
     let state = gpmsdb_desktop_tauri::state::AppState::default();
 
@@ -73,8 +89,7 @@ fn desktop_backend_can_build_runtime_database_from_raw_all_db() {
 
 #[test]
 fn desktop_backend_can_build_runtime_database_from_related_db_file() {
-    let source_db = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../tests/fixtures/small_source/genes.db");
+    let source_db = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/small_source/genes.db");
     let out_dir = tempfile::tempdir().expect("create temp output dir");
     let state = gpmsdb_desktop_tauri::state::AppState::default();
 
@@ -91,13 +106,12 @@ fn desktop_backend_can_build_runtime_database_from_related_db_file() {
 
 #[test]
 fn desktop_backend_can_export_database_to_csv() {
-    let fixture_dir =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../.tmp/small-db");
+    let fixture_dir = build_runtime_fixture();
     let export_path = std::env::temp_dir().join("gpmsdb-export-smoke.csv");
     let state = gpmsdb_desktop_tauri::state::AppState::default();
 
     gpmsdb_desktop_tauri::commands::open_database_for_test(
-        fixture_dir.to_string_lossy().into_owned(),
+        fixture_dir.path().to_string_lossy().into_owned(),
         &state,
     )
     .expect("open_database should accept the small-db fixture");
