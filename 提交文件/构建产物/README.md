@@ -6,4 +6,14 @@
 
 - `gpmsdb-desktop-tauri.exe`
 
-该文件会在仓库首次推送并触发 `.github/workflows/build-windows-exe.yml` 后下载回填到本目录。
+当前已回填真实构建产物：
+
+- `gpmsdb-desktop-tauri.exe`（来自 GitHub Actions run `24878121431`）
+
+对应工作流：
+
+- `.github/workflows/build-windows-exe.yml`
+
+对应 GitHub 页面：
+
+- `https://github.com/Clever-Chicken/gpmsdb-desktop-workbench/actions/runs/24878121431`
